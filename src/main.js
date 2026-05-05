@@ -3,6 +3,11 @@ import * as tasksApi from "./tasks.js";
 
 /** @typedef {{ id: string; title: string; completed: boolean }} Task */
 
+/** Where Supabase sends users after email confirmation (must be allowed under Authentication → URL Configuration). */
+function getEmailRedirectTo() {
+  return new URL("/", window.location.origin).href;
+}
+
 const authPanel = document.getElementById("auth-panel");
 const todoPanel = document.getElementById("todo-panel");
 const authForm = document.getElementById("auth-form");
@@ -239,7 +244,13 @@ authSignUp.addEventListener("click", async () => {
   const email = authEmail.value.trim();
   const password = authPassword.value;
   try {
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: getEmailRedirectTo(),
+      },
+    });
     if (error) throw error;
     setAuthInfo(
       "Check your email to confirm your account if required by your project settings."

@@ -17,6 +17,23 @@ You should see success with no errors. This creates the `public.tasks` table, in
 
 If **Confirm email** is required under **Authentication** → **Providers** → **Email**, new sign-ups must confirm via email before they can sign in. For local testing you can turn that off.
 
+### Email confirmation on localhost (avoid “connection refused” and 401)
+
+The confirmation link in the email must open **your running dev server** on the **same port** Vite uses, and that URL must be allowed in Supabase.
+
+1. In the dashboard go to **Authentication** → **URL Configuration**.
+2. Set **Site URL** to your dev app root, for example `http://localhost:5173` (use the port shown when you run `npm run dev`, often `5173`).
+3. Under **Redirect URLs**, add at least:
+   - `http://localhost:5173`
+   - `http://localhost:5173/**` (if your project UI offers a wildcard pattern), or add any path you use.
+   - Optionally `http://127.0.0.1:5173` if you open the app via that host.
+
+If **Site URL** still points at `http://localhost:3000` (a common default) but this app runs on **5173**, the link opens a host where nothing is listening → **localhost refused to connect**. A bad or disallowed redirect can also cause **`401`** when exchanging the auth code.
+
+4. Keep **`npm run dev` running** in the project folder, then click **Confirm** in the email so the browser can load your app and finish sign-in.
+
+This app passes **`emailRedirectTo`** on sign-up so the link targets the same origin and port as the tab where you registered (it must still appear under **Redirect URLs** in the dashboard). After you change URL settings in Supabase, **sign up again** (or use **Resend** from the **Authentication** → **Users** screen) so the next email uses the updated redirect.
+
 ## 3. Environment variables (local dev)
 
 1. Copy `.env.example` to `.env.local` if you do not already have one.
