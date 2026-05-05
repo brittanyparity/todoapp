@@ -35,6 +35,11 @@ let tasks = [];
 /** Avoid overlapping loads; stale responses must not clobber newer data or leave loading stuck. */
 let refreshSeq = 0;
 
+/** Let the auth client finish internal work before PostgREST calls (avoids deadlocks/hangs). */
+function yieldToMain() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function setAuthError(message) {
   authError.classList.remove("feedback-info");
   authError.classList.add("feedback-error");
@@ -126,6 +131,7 @@ function render() {
       toggle.disabled = true;
       setTaskError("");
       try {
+        await yieldToMain();
         await tasksApi.updateTask(task.id, { completed: next });
         task.completed = next;
         li.classList.toggle("done", next);
@@ -146,6 +152,7 @@ function render() {
       del.disabled = true;
       setTaskError("");
       try {
+        await yieldToMain();
         await tasksApi.deleteTask(task.id);
         tasks = tasks.filter((t) => t.id !== task.id);
         li.remove();
@@ -170,20 +177,8 @@ async function refreshTasks() {
   tasksLoading.hidden = false;
   setTaskError("");
   try {
-    const rows = await Promise.race([
-      tasksApi.listTasks(),
-      new Promise((_, reject) => {
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                "Loading tasks timed out. Check your connection and Supabase project status."
-              )
-            ),
-          25000
-        );
-      }),
-    ]);
+    await yieldToMain();
+    const rows = await tasksApi.listTasks();
     if (seq !== refreshSeq) return;
     tasks = rows.map((r) => ({
       id: r.id,
@@ -218,13 +213,6 @@ async function applySession(session) {
   taskInput.focus();
 }
 
-async function initSession() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  await applySession(session);
-}
-
 /**
  * Never await heavy work (e.g. Supabase data fetches) directly inside onAuthStateChange:
  * it can block the auth client and deadlock sign-out / session refresh. Defer to a macrotask.
@@ -237,7 +225,10 @@ function scheduleApplySession(session) {
 
 function subscribeAuth() {
   supabase.auth.onAuthStateChange((event, session) => {
+    // Must apply INITIAL_SESSION: getSession() alone can return null before storage rehydrates,
+    // which made refreshes look "logged out" when we skipped this event.
     if (event === "INITIAL_SESSION") {
+      scheduleApplySession(session);
       return;
     }
     if (event === "SIGNED_OUT") {
@@ -246,6 +237,10 @@ function subscribeAuth() {
     }
     if (event === "SIGNED_IN" && session?.user) {
       scheduleApplySession(session);
+      return;
+    }
+    if (event === "TOKEN_REFRESHED" && session?.user) {
+      sessionEmail.textContent = session.user.email ?? "";
       return;
     }
     if (event === "USER_UPDATED" && session?.user) {
@@ -305,14 +300,16 @@ authSignUp.addEventListener("click", async () => {
   }
 });
 
-signOutBtn.addEventListener("click", async () => {
+signOutBtn.addEventListener("click", () => {
   setTaskError("");
-  try {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-  } catch (err) {
-    setTaskError(err instanceof Error ? err.message : "Sign out failed.");
-  }
+  scheduleApplySession(null);
+  setTimeout(() => {
+    void supabase.auth.signOut({ scope: "local" }).then(({ error }) => {
+      if (error) {
+        setTaskError(error.message);
+      }
+    });
+  }, 0);
 });
 
 composer.addEventListener("submit", async (e) => {
@@ -323,6 +320,7 @@ composer.addEventListener("submit", async (e) => {
   taskInput.disabled = true;
   setTaskError("");
   try {
+    await yieldToMain();
     const row = await tasksApi.createTask(title);
     tasks.unshift({
       id: row.id,
@@ -344,6 +342,7 @@ clearDoneBtn.addEventListener("click", async () => {
   clearDoneBtn.disabled = true;
   setTaskError("");
   try {
+    await yieldToMain();
     await tasksApi.deleteCompletedTasks();
     tasks = tasks.filter((t) => !t.completed);
     render();
@@ -356,10 +355,4 @@ clearDoneBtn.addEventListener("click", async () => {
   }
 });
 
-// Register auth listener before awaiting init so a slow/hung task fetch never blocks sign-in events.
 subscribeAuth();
-
-initSession().catch((err) => {
-  setAuthError(err instanceof Error ? err.message : "Could not start app.");
-  showAuth();
-});
