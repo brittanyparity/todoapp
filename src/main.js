@@ -32,6 +32,9 @@ const taskError = document.getElementById("task-error");
 /** @type {Task[]} */
 let tasks = [];
 
+/** Avoid overlapping loads; stale responses must not clobber newer data or leave loading stuck. */
+let refreshSeq = 0;
+
 function setAuthError(message) {
   authError.classList.remove("feedback-info");
   authError.classList.add("feedback-error");
@@ -163,10 +166,12 @@ function render() {
 }
 
 async function refreshTasks() {
+  const seq = ++refreshSeq;
   tasksLoading.hidden = false;
   setTaskError("");
   try {
     const rows = await tasksApi.listTasks();
+    if (seq !== refreshSeq) return;
     tasks = rows.map((r) => ({
       id: r.id,
       title: r.title,
@@ -174,16 +179,21 @@ async function refreshTasks() {
     }));
     render();
   } catch (err) {
+    if (seq !== refreshSeq) return;
     setTaskError(err instanceof Error ? err.message : "Could not load tasks.");
     tasks = [];
     render();
   } finally {
-    tasksLoading.hidden = true;
+    if (seq === refreshSeq) {
+      tasksLoading.hidden = true;
+    }
   }
 }
 
 async function applySession(session) {
   if (!session?.user) {
+    refreshSeq += 1;
+    tasksLoading.hidden = true;
     tasks = [];
     render();
     showAuth();
@@ -202,22 +212,34 @@ async function initSession() {
   await applySession(session);
 }
 
-supabase.auth.onAuthStateChange(async (event, session) => {
-  if (event === "INITIAL_SESSION") {
-    return;
-  }
-  if (event === "SIGNED_OUT") {
-    await applySession(null);
-    return;
-  }
-  if (event === "SIGNED_IN" && session?.user) {
-    await applySession(session);
-    return;
-  }
-  if (event === "USER_UPDATED" && session?.user) {
-    sessionEmail.textContent = session.user.email ?? "";
-  }
-});
+/**
+ * Never await heavy work (e.g. Supabase data fetches) directly inside onAuthStateChange:
+ * it can block the auth client and deadlock sign-out / session refresh. Defer to a macrotask.
+ */
+function scheduleApplySession(session) {
+  setTimeout(() => {
+    void applySession(session);
+  }, 0);
+}
+
+function subscribeAuth() {
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === "INITIAL_SESSION") {
+      return;
+    }
+    if (event === "SIGNED_OUT") {
+      scheduleApplySession(null);
+      return;
+    }
+    if (event === "SIGNED_IN" && session?.user) {
+      scheduleApplySession(session);
+      return;
+    }
+    if (event === "USER_UPDATED" && session?.user) {
+      sessionEmail.textContent = session.user.email ?? "";
+    }
+  });
+}
 
 authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -265,7 +287,12 @@ authSignUp.addEventListener("click", async () => {
 
 signOutBtn.addEventListener("click", async () => {
   setTaskError("");
-  await supabase.auth.signOut();
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  } catch (err) {
+    setTaskError(err instanceof Error ? err.message : "Sign out failed.");
+  }
 });
 
 composer.addEventListener("submit", async (e) => {
@@ -309,7 +336,15 @@ clearDoneBtn.addEventListener("click", async () => {
   }
 });
 
-initSession().catch((err) => {
+(async function bootstrap() {
+  try {
+    await initSession();
+  } catch (err) {
+    setAuthError(err instanceof Error ? err.message : "Could not start app.");
+    showAuth();
+  }
+  subscribeAuth();
+})().catch((err) => {
   setAuthError(err instanceof Error ? err.message : "Could not start app.");
   showAuth();
 });
