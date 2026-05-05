@@ -170,7 +170,20 @@ async function refreshTasks() {
   tasksLoading.hidden = false;
   setTaskError("");
   try {
-    const rows = await tasksApi.listTasks();
+    const rows = await Promise.race([
+      tasksApi.listTasks(),
+      new Promise((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Loading tasks timed out. Check your connection and Supabase project status."
+              )
+            ),
+          25000
+        );
+      }),
+    ]);
     if (seq !== refreshSeq) return;
     tasks = rows.map((r) => ({
       id: r.id,
@@ -249,8 +262,15 @@ authForm.addEventListener("submit", async (e) => {
   const email = authEmail.value.trim();
   const password = authPassword.value;
   try {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     if (error) throw error;
+    // Do not rely only on SIGNED_IN: register after init can race; this matches the returned session.
+    if (data.session?.user) {
+      scheduleApplySession(data.session);
+    }
   } catch (err) {
     setAuthError(err instanceof Error ? err.message : "Sign in failed.");
   } finally {
@@ -336,15 +356,10 @@ clearDoneBtn.addEventListener("click", async () => {
   }
 });
 
-(async function bootstrap() {
-  try {
-    await initSession();
-  } catch (err) {
-    setAuthError(err instanceof Error ? err.message : "Could not start app.");
-    showAuth();
-  }
-  subscribeAuth();
-})().catch((err) => {
+// Register auth listener before awaiting init so a slow/hung task fetch never blocks sign-in events.
+subscribeAuth();
+
+initSession().catch((err) => {
   setAuthError(err instanceof Error ? err.message : "Could not start app.");
   showAuth();
 });
