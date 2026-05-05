@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="app">
@@ -19,31 +19,81 @@
         <p class="subtitle">Stay on top of what matters.</p>
       </header>
 
-      <form class="composer" id="composer" autocomplete="off">
-        <label class="sr-only" for="task-input">New task</label>
-        <input
-          id="task-input"
-          class="task-input"
-          type="text"
-          name="task"
-          placeholder="Add a task…"
-          maxlength="500"
-          required
-        />
-        <button type="submit" class="btn btn-primary">Add</button>
-      </form>
+      <section class="auth-panel" id="auth-panel">
+        <h2 class="panel-title">Sign in</h2>
+        <p class="panel-hint">Tasks are saved to your account.</p>
+        <form class="auth-form" id="auth-form" autocomplete="on">
+          <label class="field">
+            <span class="field-label">Email</span>
+            <input
+              class="task-input"
+              id="auth-email"
+              name="email"
+              type="email"
+              autocomplete="email"
+              required
+            />
+          </label>
+          <label class="field">
+            <span class="field-label">Password</span>
+            <input
+              class="task-input"
+              id="auth-password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              minlength="6"
+              required
+            />
+          </label>
+          <div class="auth-actions">
+            <button type="submit" class="btn btn-primary" id="auth-sign-in">
+              Sign in
+            </button>
+            <button type="button" class="btn btn-secondary" id="auth-sign-up">
+              Create account
+            </button>
+          </div>
+        </form>
+        <p class="feedback feedback-error" id="auth-error" role="alert" hidden></p>
+      </section>
 
-      <div class="toolbar" id="toolbar" hidden>
-        <span class="count" id="count-label" aria-live="polite"></span>
-        <button type="button" class="btn btn-ghost" id="clear-done">
-          Clear completed
-        </button>
-      </div>
+      <section class="todo-panel" id="todo-panel" hidden>
+        <div class="session-bar">
+          <span class="session-email" id="session-email"></span>
+          <button type="button" class="btn btn-ghost" id="sign-out">Sign out</button>
+        </div>
 
-      <ul class="list" id="list" role="list"></ul>
+        <p class="feedback feedback-error" id="task-error" role="alert" hidden></p>
 
-      <p class="empty" id="empty">No tasks yet. Add one above.</p>
+        <form class="composer" id="composer" autocomplete="off">
+          <label class="sr-only" for="task-input">New task</label>
+          <input
+            id="task-input"
+            class="task-input"
+            type="text"
+            name="task"
+            placeholder="Add a task…"
+            maxlength="500"
+            required
+          />
+          <button type="submit" class="btn btn-primary" id="add-btn">Add</button>
+        </form>
+
+        <p class="loading" id="tasks-loading" hidden>Loading tasks…</p>
+
+        <div class="toolbar" id="toolbar" hidden>
+          <span class="count" id="count-label" aria-live="polite"></span>
+          <button type="button" class="btn btn-ghost" id="clear-done">
+            Clear completed
+          </button>
+        </div>
+
+        <ul class="list" id="list" role="list"></ul>
+
+        <p class="empty" id="empty">No tasks yet. Add one above.</p>
+      </section>
     </div>
-    <script src="app.js" defer></script>
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
